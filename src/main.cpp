@@ -23,7 +23,7 @@ json decode_bencoded_value(const std::string& encoded_value) {
     } else {
         throw std::runtime_error("Unhandled encoded value: " + encoded_value);
     }
-}
+}   
 
 int main(int argc, char* argv[]) {
     // Flush after every std::cout / std::cerr
@@ -46,9 +46,9 @@ int main(int argc, char* argv[]) {
         std::cerr << "Logs from your program will appear here!" << std::endl;
 
         // TODO: Uncomment the code below to pass the first stage
-        // std::string encoded_value = argv[2];
-        // json decoded_value = decode_bencoded_value(encoded_value);
-        // std::cout << decoded_value.dump() << std::endl;
+        std::string encoded_value = argv[2];
+        json decoded_value = decode_bencoded_value(encoded_value);
+        std::cout << decoded_value.dump() << std::endl;
     } else {
         std::cerr << "unknown command: " << command << std::endl;
         return 1;
