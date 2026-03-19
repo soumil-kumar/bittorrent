@@ -1,10 +1,6 @@
-#include <iostream>
-#include <string>
-#include <vector>
-#include <cctype>
-#include <cstdlib>
-
+#include<bits/stdc++.h>
 #include "lib/nlohmann/json.hpp"
+using namespace std;
 
 using json = nlohmann::json;
 
@@ -60,6 +56,22 @@ json decode_bencoded_value(const std::string& encoded_value, int &offset) {
     }
 }   
 
+string process_torrent_file(string &file_name){
+    ifstream file = ifstream(file_name, ios::binary);
+    if(!file){
+        cerr << "Error opening file \n";
+        return "";
+    }
+    file.seekg(0, ios::end);
+    long long file_size = file.tellg();
+    file.seekg(0, ios::beg);
+    string buffer;
+    buffer.resize(file_size);
+    file.read(&buffer[0], file_size);
+    file.close();
+    return buffer;
+}
+
 int main(int argc, char* argv[]) {
     // Flush after every std::cout / std::cerr
     std::cout << std::unitbuf;
@@ -83,7 +95,19 @@ int main(int argc, char* argv[]) {
         std::string encoded_value = argv[2];
         json decoded_value = decode_bencoded_value(encoded_value, offset);
         std::cout << decoded_value.dump() << std::endl;
-    } else {
+    } else if (command == "info") {
+        if (argc < 3) {
+            std::cerr << "Usage: " << argv[0] << " info <file>" << std::endl;
+            return 1;
+        }
+        std:: string file_name = argv[2];
+        auto buffer = process_torrent_file(file_name);
+        int offset = 0;
+        json decoded_value =  decode_bencoded_value(buffer, offset);
+        std::cout << "Tracker URL: " << decoded_value["announce"].dump()<<'\n';
+        std::cout << "Length: " << decoded_value["info"]["length"]<<'\n';
+
+    }else {
         std::cerr << "unknown command: " << command << std::endl;
         return 1;
     }
