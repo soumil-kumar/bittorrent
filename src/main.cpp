@@ -106,9 +106,9 @@ int main(int argc, char* argv[]) {
         auto buffer = process_torrent_file(file_name);
         int offset = 0;
         json decoded_value =  decode_bencoded_value(buffer, offset);
-        //std::cout << "Tracker URL: " << decoded_value["announce"].get<string>()<<'\n';
-        //std::cout << "Length: " << decoded_value["info"]["length"]<<'\n';
-        int info_idx = buffer.find("4.info") + strlen("4.info");
+        std::cout << "Tracker URL: " << decoded_value["announce"].get<string>()<<'\n';
+        std::cout << "Length: " << decoded_value["info"]["length"]<<'\n';
+        int info_idx = buffer.find("4:info") + strlen("4:info");
         auto info_coded = buffer.substr(info_idx, buffer.size() - info_idx - 1);
         cout << "Info Hash: " << sha1(info_coded) << '\n';
     }else {
