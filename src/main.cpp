@@ -1,5 +1,7 @@
-#include<bits/stdc++.h>
+#include <bits/stdc++.h>
 #include "lib/nlohmann/json.hpp"
+#include "lib/sha1.hpp"
+
 using namespace std;
 
 using json = nlohmann::json;
@@ -18,7 +20,7 @@ json decode_bencoded_value(const std::string& encoded_value, int &offset) {
             throw std::runtime_error("Invalid encoded value: " + encoded_value);
         }
     }else if (encoded_value[0] == 'i') {
-        offset = encoded_value.find('e') + 1;
+        offset = encoded_value.find('e') + 1;   
         return json(stol(encoded_value.substr(1, offset)));
     }else if (encoded_value[0] == 'l') {
         auto res = json::array({});
@@ -104,9 +106,11 @@ int main(int argc, char* argv[]) {
         auto buffer = process_torrent_file(file_name);
         int offset = 0;
         json decoded_value =  decode_bencoded_value(buffer, offset);
-        std::cout << "Tracker URL: " << decoded_value["announce"].get<string>()<<'\n';
-        std::cout << "Length: " << decoded_value["info"]["length"]<<'\n';
-
+        //std::cout << "Tracker URL: " << decoded_value["announce"].get<string>()<<'\n';
+        //std::cout << "Length: " << decoded_value["info"]["length"]<<'\n';
+        int info_idx = buffer.find("4.info") + strlen("4.info");
+        auto info_coded = buffer.substr(info_idx, buffer.size() - info_idx - 1);
+        cout << "Info Hash: " << sha1(info_coded) << '\n';
     }else {
         std::cerr << "unknown command: " << command << std::endl;
         return 1;
