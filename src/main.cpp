@@ -69,7 +69,7 @@ string process_torrent_file(string &file_name){
     file.seekg(0, ios::beg);
     string buffer;
     buffer.resize(file_size);
-    file.read(&buffer[0], file_size);
+    file.read(buffer.data(), file_size);
     file.close();
     return buffer;
 }
@@ -94,24 +94,33 @@ int main(int argc, char* argv[]) {
         std::cerr << "Logs from your program will appear here!" << std::endl;
         int offset = 0;
         // TODO: Uncomment the code below to pass the first stage
-        std::string encoded_value = argv[2];
+        string encoded_value = argv[2];
         json decoded_value = decode_bencoded_value(encoded_value, offset);
-        std::cout << decoded_value.dump() << std::endl;
+        cout << decoded_value.dump() << std::endl;
     } else if (command == "info") {
         if (argc < 3) {
             std::cerr << "Usage: " << argv[0] << " info <file>" << std::endl;
             return 1;
         }
-        std:: string file_name = argv[2];
+        string file_name = argv[2];
         auto buffer = process_torrent_file(file_name);
         int offset = 0;
         json decoded_value =  decode_bencoded_value(buffer, offset);
-        std::cout << "Tracker URL: " << decoded_value["announce"].get<string>()<<'\n';
-        std::cout << "Length: " << decoded_value["info"]["length"]<<'\n';
+        cout << "Tracker URL: " << decoded_value["announce"].get<string>()<<'\n';
+        cout << "Length: " << decoded_value["info"]["length"]<<'\n';
         int info_idx = buffer.find("4:info") + strlen("4:info");
         auto info_coded = buffer.substr(info_idx, buffer.size() - info_idx - 1);
         cout << "Info Hash: " << sha1(info_coded) << '\n';
-        cout << "Piece Lenght: " << decoded_value["info"]["piece lenght"]<<'\n';
+        cout << "Piece Length: " << decoded_value["info"]["piece length"]<<'\n';
+        string pieces_str = decoded_value["info"]["pieces"].get<string>();
+        cout<<"Pieces Hashes: \n";
+        int i=0;
+        for(uint8_t byte : pieces_str){
+            printf("%02x", byte);
+            i++;
+            if(i%20 == 0) cout<<'\n';
+        }
+        cout<<'\n';
     }else {
         std::cerr << "unknown command: " << command << std::endl;
         return 1;

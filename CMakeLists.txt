@@ -11,3 +11,5 @@ find_package(OpenSSL REQUIRED)
 add_executable(bittorrent ${SOURCE_FILES})
 
 target_link_libraries(bittorrent PRIVATE OpenSSL::Crypto)
+
+message(STATUS "SOURCE_FILES: ${SOURCE_FILES}")
