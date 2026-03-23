@@ -1,7 +1,7 @@
 #include <bits/stdc++.h>
 #include "lib/nlohmann/json.hpp"
 #include "lib/sha1.hpp"
-
+#include <curl/curl.h>
 using namespace std;
 
 using json = nlohmann::json;
@@ -74,6 +74,79 @@ string process_torrent_file(string &file_name){
     return buffer;
 }
 
+string hex_to_bytes(string &hex) {
+    string bytes;
+    for(int i = 0; i < hex.size(); i+=2) {
+        string hex_substring = hex.substr(i, 2);
+        uint8_t byte = (uint8_t)(stoi(hex_substring, nullptr, 16));
+        bytes.push_back(byte);   
+    }
+    return bytes;
+}
+
+string get_info_hash_bytes(string &buffer) {
+    int info_idx = buffer.find("4:info") + strlen("4:info");
+    auto info_coded = buffer.substr(info_idx, buffer.size() - info_idx - 1);
+    auto hex_hash = sha1(info_coded);
+    return hex_to_bytes(hex_hash);
+}
+
+string url_encode_binary(string &binary_data) {
+    ostringstream encoded;
+    encoded.fill('0');
+    encoded << hex << uppercase;
+    for(uint8_t c : binary_data) {
+        encoded << '%' << setw(2) << static_cast<int>(c);
+    }
+    return encoded.str();
+}
+
+static size_t WriteCallback(void *contents, size_t size, size_t nmemb, std::string *userp)
+{
+    userp->append((char *)contents, size * nmemb);
+    return size * nmemb;
+}
+
+string get_peers(string &tracker_url, string &info_hash_byte, int length=1) {
+    string url_encoded_hash = url_encode_binary(info_hash_byte);
+    auto url = format("{}?info_hash={}&peer_id=THIS_IS_SOUMIL_10&port=6881&uploaded=0&downloaded=0&left={}&compact=1",
+        tracker_url, url_encoded_hash, length);
+    cerr << "url: " << url << '\n';
+    string response;
+    CURL *curl = curl_easy_init();
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    CURLcode res = curl_easy_perform(curl);
+    if(res != CURLE_OK) {
+        cerr << "curl easy perform failed: " << curl_easy_strerror(res) << '\n';
+    }
+    int offset = 0;
+    json decoded_resp = decode_bencoded_value(response, offset);
+    auto peers_bin = decoded_resp["peers"].get<string>();
+    string out = "";
+    for(int i=0; i<peers_bin.length(); i+=6) {
+        uint8_t b = peers_bin[i];
+        out += to_string((uint8_t)peers_bin[i] + '.');
+        out += to_string((uint8_t)peers_bin[i + 1] + '.');
+        out += to_string((uint8_t)peers_bin[i + 2] + '.');
+        out += to_string((uint8_t)peers_bin[i + 3] + ':');     
+        uint16_t port = ((uint8_t)peers_bin[i + 4] << 8) | (uint8_t)peers_bin[i + 5];
+        out += to_string(port) + '\n';   
+    }
+    return out.substr(0, out.length()-1);
+}
+
+string get_peers(string &buffer) {
+    int offset = 0;
+    json decoded_value = decode_bencoded_value(buffer, offset);
+    string tracker_url = decoded_value["announce"].get<string>();
+    int length = decoded_value["info"]["length"].get<int>();
+    string info_hash_byte = get_info_hash_bytes(buffer);
+    return get_peers(tracker_url, info_hash_byte, length);
+}
+
 int main(int argc, char* argv[]) {
     // Flush after every std::cout / std::cerr
     std::cout << std::unitbuf;
@@ -121,6 +194,15 @@ int main(int argc, char* argv[]) {
             if(i%20 == 0) cout<<'\n';
         }
         cout<<'\n';
+    }else if(command == "peers"){
+        if (argc < 3) {
+            std::cerr << "Usage: " << argv[0] << " peers <file>" << std::endl;
+            return 1;
+        }
+        string file_name = argv[2];
+        auto buffer = process_torrent_file(file_name);
+        auto out = get_peers(buffer);
+        cout << out << '\n';
     }else {
         std::cerr << "unknown command: " << command << std::endl;
         return 1;
