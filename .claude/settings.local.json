@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/c/msys64/ucrt64/bin/objdump.exe -p /c/MinGW/bin/libgmp-10.dll)",
+      "Bash(/c/msys64/ucrt64/bin/objdump.exe -p /c/msys64/ucrt64/bin/libgmp-10.dll)"
+    ]
+  }
+}

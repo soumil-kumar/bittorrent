@@ -130,10 +130,10 @@ string get_peers(string &tracker_url, string &info_hash_byte, int length=1) {
     string out = "";
     for(int i=0; i<peers_bin.length(); i+=6) {
         uint8_t b = peers_bin[i];
-        out += to_string((uint8_t)peers_bin[i] + '.');
-        out += to_string((uint8_t)peers_bin[i + 1] + '.');
-        out += to_string((uint8_t)peers_bin[i + 2] + '.');
-        out += to_string((uint8_t)peers_bin[i + 3] + ':');     
+        out += to_string((uint8_t)peers_bin[i]) + '.';
+        out += to_string((uint8_t)peers_bin[i + 1]) + '.';
+        out += to_string((uint8_t)peers_bin[i + 2]) + '.';
+        out += to_string((uint8_t)peers_bin[i + 3]) + ':';     
         uint16_t port = ((uint8_t)peers_bin[i + 4] << 8) | (uint8_t)peers_bin[i + 5];
         out += to_string(port) + '\n';   
     }
@@ -165,10 +165,8 @@ int main(int argc, char* argv[]) {
             std::cerr << "Usage: " << argv[0] << " decode <encoded_value>" << std::endl;
             return 1;
         }
-        // You can use print statements as follows for debugging, they'll be visible when running tests.
         std::cerr << "Logs from your program will appear here!" << std::endl;
         int offset = 0;
-        // TODO: Uncomment the code below to pass the first stage
         string encoded_value = argv[2];
         json decoded_value = decode_bencoded_value(encoded_value, offset);
         cout << decoded_value.dump() << std::endl;
@@ -198,7 +196,7 @@ int main(int argc, char* argv[]) {
         cout<<'\n';
     }else if(command == "peers"){
         if (argc < 3) {
-            std::cerr << "Usage: " << argv[0] << " peers <file>" << std::endl;
+            cerr << "Usage: " << argv[0] << " peers <file>" << std::endl;
             return 1;
         }
         string file_name = argv[2];
