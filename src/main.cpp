@@ -6,8 +6,21 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <poll.h>
 
 using namespace std;
+
+enum MessageID{
+    Choke_MSG = 0x0,
+    Unchoke_MSG,
+    Interested_MSG,
+    Not_MSGInterested,
+    Have_MSG,
+    Bitfield_MSG,
+    Request_MSG,
+    Piece_MSG,
+    Cancel_MSG,
+};
 
 using json = nlohmann::json;
 
@@ -233,6 +246,105 @@ PeerInfo handshake(string &peer, string &info_hash_bytes, bool extension = false
     return res;
 }
 
+vector<int> get_peers_connections(string &buffer){
+    auto info_hash_bytes = get_info_hash_bytes(buffer);
+    string peers_str = get_peers(buffer);
+    vector<string> peers;
+    for(auto peer : std::views::split(peers_str, '\n')){
+        peers.push_back({peer.begin(), peer.end()});
+    }
+    vector<int> sockets;
+    sockets.reserve(peers.size());
+    vector<std::thread> threads;
+    threads.reserve(peers.size());
+    for(auto &peer : peers){
+        threads.emplace_back([&]() {
+            sockets.push_back(handshake(peer, info_hash_bytes).sock_fd);
+        });
+    }
+    for(auto &thread : threads){
+        thread.join();
+    }
+    return sockets;
+}
+
+constexpr uint32_t CHUNK_SIZE = 16 * 1024;
+constexpr size_t RESPONSE_BUFFER_SIZE = 1024;
+
+size_t read_exactly(int sock_fd, void *buf, size_t bytes_to_read, int timeout_ms = 1000){
+    size_t bytes_read = 0;
+    while(bytes_read < bytes_to_read){
+        struct pollfd pfd;
+        pfd.fd = sock_fd;
+        pfd.events = POLLIN;
+        int ret = poll(&pfd, 1, timeout_ms);
+        if(ret <= 0){
+            fprintf(stderr, "DISCONNECT: sock_fd: %d, ret_val: %d\n", sock_fd, ret);
+            close(sock_fd);
+            return 0;
+        }
+        size_t remaining_bytes = bytes_to_read - bytes_read;
+        size_t n = read(sock_fd, (uint8_t*)buf+bytes_read, remaining_bytes);
+        if(n <= 0){
+            fprintf(stderr, "DISCONNECT: sock_fd: %d, bytes_read: %lu\n", sock_fd, n);
+            close(sock_fd);
+            return 0;
+        }
+        bytes_read += n;
+    }
+    return bytes_read;
+}
+
+int download_piece(int sock_fd, uint8_t *piece_buffer, size_t piece_size, int piece_index, bool magnet = false){
+    uint8_t response[RESPONSE_BUFFER_SIZE];
+    //part 1: handle bitfield messages
+    uint32_t message_len_network, message_len;
+    if(magnet){
+        write(sock_fd, (char[]){0, 0, 0, 1, Interested_MSG}, 5);
+    }else{
+        if(not read_exactly(sock_fd, &message_len_network, 4)) return -1;
+        message_len = ntohl(message_len_network);
+        if(not read_exactly(sock_fd, response, message_len)) return -1;
+        if(response[0] == Bitfield_MSG){
+            write(sock_fd, (char[]){0, 0, 0, 1, Interested_MSG}, 5);
+        }
+    }
+    //part 2: handle unchoke and send request
+    uint32_t chunk_count = (piece_size + CHUNK_SIZE - 1) / CHUNK_SIZE;
+    if(not read_exactly(sock_fd, &message_len_network, 4)) return -1;
+    message_len = ntohl(message_len_network);
+    if(not read_exactly(sock_fd, response, message_len)) return -1;
+    if(response[0] == Unchoke_MSG){
+        uint32_t piece_index_network = htonl(piece_index);
+        uint32_t msg_len_network = htonl(13);
+        for(int chunk_idx = 0; chunk_idx < chunk_count; chunk_idx++){
+            uint32_t begin = htonl(chunk_idx * CHUNK_SIZE);
+            uint32_t len = htonl(min(CHUNK_SIZE, (uint32_t)(piece_size - chunk_idx * CHUNK_SIZE)));
+            write(sock_fd, &msg_len_network, 4);
+            write(sock_fd, (char[]){Request_MSG}, 1);
+            write(sock_fd, &piece_index_network, 4);
+            write(sock_fd, &begin, 4);
+            write(sock_fd, &len, 4);
+        } 
+    }
+    //part 3: Download chunks
+    for(int chunk_idx = 0; chunk_idx < chunk_count; chunk_idx++){
+        if(not read_exactly(sock_fd, &message_len_network, 4)) return -1;
+        message_len = ntohl(message_len_network);
+        uint8_t rec_id;
+        uint32_t rec_piecie_idx;
+        uint32_t byte_offset_network;
+        if(not read_exactly(sock_fd, &rec_id, 1)) return -1;
+        if(not read_exactly(sock_fd, &rec_piecie_idx, 4)) return -1;
+        if(not read_exactly(sock_fd, &byte_offset_network, 4)) return -1;
+        uint32_t byte_offset = ntohl(byte_offset_network);
+        size_t block_len =  message_len - 9;
+        if(not read_exactly(sock_fd, piece_buffer + byte_offset, block_len)) return -1;
+    }
+    close(sock_fd);
+    return piece_index;
+}
+
 int main(int argc, char* argv[]) {
     // Flush after every std::cout / std::cerr
     std::cout << std::unitbuf;
@@ -299,7 +411,41 @@ int main(int argc, char* argv[]) {
         json decoded_value = decode_bencoded_value(buffer, offset);
         auto info_hash_bytes = get_info_hash_bytes(buffer);
         handshake(peer, info_hash_bytes);
-    }else {
+    }else if(command == "download_piece"){
+        if (argc < 6) {
+            cerr << "Usage: " << argv[0] << " download_piece -o out_file sample.torrent <piece_index>" << endl;
+            return 1;
+        }
+        string out_file = argv[3];
+        string file_name = argv[4];
+        int piece_index = atoi(argv[5]);
+        cerr << "out_file: " << out_file <<'\n';
+        cerr << "file_name: " << file_name <<'\n';
+        cerr << "piece_index: " << piece_index <<'\n';
+        auto buffer = process_torrent_file(file_name);
+        int offset = 0;
+        json decoded_value = decode_bencoded_value(buffer, offset);
+        size_t standard_piece_len = decoded_value["info"]["piece length"];
+        size_t total_size = decoded_value["info"]["length"];
+        size_t piece_count = total_size / standard_piece_len;
+        size_t used_len = piece_count * standard_piece_len;
+        size_t piece_size = (piece_index < piece_count) ? standard_piece_len : max(total_size - used_len, (size_t)0);
+        uint8_t *piece_buffer = (uint8_t *)malloc(piece_size);
+        while(true){
+            vector<int> sockets = get_peers_connections(buffer);
+            for(auto socket : sockets){
+                if(download_piece(socket, piece_buffer, piece_size, piece_index) != -1){
+                    ofstream file = ofstream(out_file, std::ios::binary);
+                    if(file){
+                        file.write((const char *)piece_buffer, piece_size);
+                        file.close();
+                    }
+                    return 0;   
+                }
+            }
+        }
+    }
+    else {
         std::cerr << "unknown command: " << command << std::endl;
         return 1;
     }
