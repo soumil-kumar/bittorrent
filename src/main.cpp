@@ -2,7 +2,10 @@
 #include "lib/nlohmann/json.hpp"
 #include "lib/sha1.hpp"
 //#include "lib/curl/curl.h"
-#include <curl/curl.h>`
+#include <curl/curl.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 using namespace std;
 
@@ -86,11 +89,13 @@ string hex_to_bytes(string &hex) {
     return bytes;
 }
 
-string get_info_hash_bytes(string &buffer) {
-    int info_idx = buffer.find("4:info") + strlen("4:info");
-    auto info_coded = buffer.substr(info_idx, buffer.size() - info_idx - 1);
-    auto hex_hash = sha1(info_coded);
-    return hex_to_bytes(hex_hash);
+string bytes_to_hex(unsigned char *bytes, size_t length) {
+    string hex;
+    hex.reserve(length*2);
+    for(size_t i=0; i<length; i++) {
+        hex += format("{:02x}", bytes[i]);
+    }
+    return hex;
 }
 
 string url_encode_binary(string &binary_data) {
@@ -102,6 +107,14 @@ string url_encode_binary(string &binary_data) {
     }
     return encoded.str();
 }
+
+string get_info_hash_bytes(string &buffer) {
+    int info_idx = buffer.find("4:info") + strlen("4:info");
+    auto info_coded = buffer.substr(info_idx, buffer.size() - info_idx - 1);
+    auto hex_hash = sha1(info_coded);
+    return hex_to_bytes(hex_hash);
+}
+
 
 static size_t WriteCallback(void *contents, size_t size, size_t nmemb, std::string *userp)
 {
@@ -149,6 +162,77 @@ string get_peers(string &buffer) {
     return get_peers(tracker_url, info_hash_byte, length);
 }
 
+struct PeerInfo {
+    int sock_fd = -1;
+    uint8_t ut_metadata = 0;
+    bool extension = false;
+};
+
+PeerInfo handshake(string &peer, string &info_hash_bytes, bool extension = false) {
+    //connect
+    string peer_ip = peer.substr(0, peer.find(':'));
+    int port = atoi(peer.substr(peer_ip.length() + 1).c_str());
+    PeerInfo res;
+    res.sock_fd = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in peer_addr = {
+        .sin_family = AF_INET,
+        .sin_port = htons(port),
+        .sin_addr = {htonl(INADDR_ANY)},
+    };
+    inet_pton(AF_INET, peer_ip.c_str(), &peer_addr.sin_addr);
+    connect(res.sock_fd, (struct sockaddr *)&peer_addr, sizeof(peer_addr));
+
+    //68-byte handshake 
+    char handshake_buf[68];
+    handshake_buf[0] = 19;
+    memcpy(handshake_buf + 1, "BitTorrent protocol", 19);
+    memset(handshake_buf + 20, 0, 8);                           //reserved bytes
+    memcpy(handshake_buf + 28, info_hash_bytes.c_str(), 20);    //SHA1 hash    
+    memcpy(handshake_buf + 48, "THIS_IS_SOUMIL_KUMAR", 20);     //peer identifier
+    if(extension) handshake_buf[25] = 0x10;
+    ssize_t bytes_sent = write(res.sock_fd, handshake_buf, 68);
+    char response[68];
+    ssize_t bytes_read = read(res.sock_fd, response, 68);
+
+    //connect                                                           
+    if(bytes_read == 68 && response[0] == 19) {
+        if (memcmp(response + 28, info_hash_bytes.c_str(), 20) == 0) {
+            auto peer_id = bytes_to_hex((uint8_t *)(response + 48), 20);
+            cout<<"Peer ID: "<<peer_id<<'\n';
+            if(response[25] == 0x10){
+                cerr<<"-------------[ Extension Supported ]----------"<<'\n';
+                std::string out = "d1:md11:ut_metadatai1e6:ut_pexi2ee1:pi6881ee";
+                uint32_t len = out.length() + /* message id */ 1 + /* ext message id */ 1;
+                len = htonl(len);
+                write(res.sock_fd, &len, 4);
+                write(res.sock_fd, (char[]){20}, 1);
+                write(res.sock_fd, (char[]){0}, 1);
+                write(res.sock_fd, out.c_str(), out.length());
+                //--[ BitField]--------------------
+                uint32_t message_len;
+                read(res.sock_fd, &message_len, 4);
+                message_len = ntohl(message_len);
+                read(res.sock_fd, response, message_len);
+                //--[ Receive Extension Handshake ]--------------------
+                read(res.sock_fd, &message_len, 4);
+                message_len = ntohl(message_len);
+                read(res.sock_fd, response, 2); // Message ID and Ext Message ID
+                message_len -= 2;
+                std::string bufstr("", message_len);
+                size_t bytes_read = read(res.sock_fd, bufstr.data(), message_len);
+                int offset = 0;
+                auto decoded_value = decode_bencoded_value(bufstr, offset);
+                uint8_t ut_metadata = decoded_value["m"]["ut_metadata"].get<uint8_t>();
+                std::cout << "Peer Metadata Extension ID: " << (int)ut_metadata << '\n';
+
+                res.ut_metadata = ut_metadata ;
+                res.extension = true;
+            }
+        }else res.sock_fd = -1;
+    }
+    return res;
+}
+
 int main(int argc, char* argv[]) {
     // Flush after every std::cout / std::cerr
     std::cout << std::unitbuf;
@@ -156,7 +240,7 @@ int main(int argc, char* argv[]) {
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " decode <encoded_value>" << std::endl;
         return 1;
-    }
+    }  
 
     std::string command = argv[1];
 
@@ -203,6 +287,18 @@ int main(int argc, char* argv[]) {
         auto buffer = process_torrent_file(file_name);
         auto out = get_peers(buffer);
         cout << out << '\n';
+    }else if(command == "handshake"){
+        if (argc < 3) {
+            cerr << "Usage: " << argv[0] << " handshake sample.torrent <peer_ip>:<peer:port>" <<endl;
+            return 1;
+        }
+        string file_name = argv[2];
+        string peer = argv[3];
+        auto buffer = process_torrent_file(file_name);
+        int offset = 0;
+        json decoded_value = decode_bencoded_value(buffer, offset);
+        auto info_hash_bytes = get_info_hash_bytes(buffer);
+        handshake(peer, info_hash_bytes);
     }else {
         std::cerr << "unknown command: " << command << std::endl;
         return 1;
