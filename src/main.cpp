@@ -626,6 +626,50 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
+    }else if (command == "magnet_download") {
+        if (argc < 5) {
+            cerr << "Usage: " << argv[0] << "magnet_download_piece -o out_file <magnet-link> <piece_index" << endl;
+            return 1;   
+        }
+        string out_file = argv[3];
+        string magnet_link = argv[4];
+        int total_size, standard_piece_size;
+        size_t piece_count, used_len;
+        uint8_t *file_buffer = 0;
+        unordered_set<int> pieces;
+        do{
+            vector<PeerInfo> peers = magnet_get_peers(magnet_link);
+            if(file_buffer == 0){
+                auto metadata = get_magnet_metadata(peers[0]);
+                total_size = metadata["length"];
+                standard_piece_size = metadata["piece length"];
+                piece_count = total_size / standard_piece_size;
+                used_len = piece_count * standard_piece_size;
+                file_buffer = (uint8_t *)malloc(total_size);
+                for(int i=0; i<=piece_count; i++) pieces.insert(i);
+            }
+            vector<future<int>> futures;
+            int tasks = min(peers.size(), piece.size());
+            auto it = pieces.begin();
+            for(int i=0; i<tasks; i++, it++) {
+                int sock_fd = peers[i].sock_fd;
+                int piece_index = *it;
+                size_t piece_size = (piece_index < piece_count) ? standard_piece_size : (total_size > used_len ? total_size - used_len : 0);
+                uint8_t *piece_buffer = file_buffer + (piece_index * standard_piece_size);
+                futures.push_back(async(launch::async, donwload_piece, sock_fd, piece_buffer, piece_size, piece_index, true));
+            } 
+            for(auto &f : futures) {
+                auto res = f.get();
+                if(res == -1) continue;
+                cout<<"Magnet Downloaded piece_index: "<< res << '\n';
+                pieces.erase(res);
+            }
+        }while (not pieces.empty());
+        ofstreaam file = ofstream(out_file, ios::binary);
+        if(file){
+            file.write((const char *)file_buffer, total_size);
+            file.close();
+        }
     }else {
         std::cerr << "unknown command: " << command << std::endl;
         return 1;
