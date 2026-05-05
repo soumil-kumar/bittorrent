@@ -405,7 +405,7 @@ json get_magnet_metadata(PeerInfo &peer) {
     string bufstr("", len);
     size_t bytes_read = read(peer.sock_fd, bufstr.data(), len);
     int offset = 0, offset2=0;
-    auto decoded_value = decode_bencoded_value(bufstr, &offset);
+    auto decoded_value = decode_bencoded_value(bufstr, offset);
     auto decoded_value2 = decode_bencoded_value(bufstr.substr(offset), offset2);
     return decoded_value;
 }
