@@ -413,7 +413,7 @@ json get_magnet_metadata(PeerInfo &peer) {
 vector<PeerInfo> magnet_get_peers(string &magnet_link){
     auto [peers_str, bytes_info_hash] = magnet_ip_and_hash(magnet_link);
     vector<string> peers;
-    for(auto peer : view::split(peers_str, '\n')) peer.push_back({peer.begin(), peer.end()});
+    for(auto peer : views::split(peers_str, '\n')) peer.push_back({peer.begin(), peer.end()});
     vector<PeerInfo> sockets;
     sockets.reserve(peers.size());
     vector<thread> threads;
@@ -421,7 +421,7 @@ vector<PeerInfo> magnet_get_peers(string &magnet_link){
     for(auto &peer : peers){
         threads.emplace_back([&](){
             sockets.push_back(handshake(peer, bytes_info_hash, true));
-        })
+        });
     }
     for(auto &thread : threads) thread.join();
     return sockets;
