@@ -649,7 +649,7 @@ int main(int argc, char* argv[]) {
                 for(int i=0; i<=piece_count; i++) pieces.insert(i);
             }
             vector<future<int>> futures;
-            int tasks = min(peers.size(), piece.size());
+            int tasks = min(peers.size(), pieces.size());
             auto it = pieces.begin();
             for(int i=0; i<tasks; i++, it++) {
                 int sock_fd = peers[i].sock_fd;
@@ -665,7 +665,7 @@ int main(int argc, char* argv[]) {
                 pieces.erase(res);
             }
         }while (not pieces.empty());
-        ofstreaam file = ofstream(out_file, ios::binary);
+        ofstream file = ofstream(out_file, ios::binary);
         if(file){
             file.write((const char *)file_buffer, total_size);
             file.close();
