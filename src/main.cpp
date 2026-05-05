@@ -594,7 +594,7 @@ int main(int argc, char* argv[]) {
         for(int i=0; i<pieces_hash.length(); i+=40){
             cout << pieces_hash.substr(i, 40) << '\n';
         }
-    }else if (command == "magent_download_piece") {
+    }else if (command == "magnet_download_piece") {
         if(argc < 6) {
             cerr << "Usage: " << argv[0] << " magnet_download_piece -o out_file <magnet-link> <piece_index>" << endl;
             return 1;
