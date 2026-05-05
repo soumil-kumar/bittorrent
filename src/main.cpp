@@ -410,6 +410,23 @@ json get_magnet_metadata(PeerInfo &peer) {
     return decoded_value2;
 }
 
+vector<PeerInfo> magnet_get_peers(string &magnet_link){
+    auto [peers_str, bytes_info_hash] = magnet_ip_and_hash(magnet_link);
+    vector<string> peers;
+    for(auto peer : view::split(peers_str, '\n')) peer.push_back({peer.begin(), peer.end()});
+    vector<PeerInfo> sockets;
+    sockets.reserve(peers.size());
+    vector<thread> threads;
+    threads.reserve(peers.size());
+    for(auto &peer : peers){
+        threads.emplace_back([&](){
+            sockets.push_back(handshake(peer, bytes_info_hash, true));
+        })
+    }
+    for(auto &thread : threads) thread.join();
+    return sockets;
+}
+
 int main(int argc, char* argv[]) {
     // Flush after every std::cout / std::cerr
     std::cout << std::unitbuf;
@@ -599,7 +616,7 @@ int main(int argc, char* argv[]) {
                 piece_buffer = (uint8_t *)malloc(piece_size);
             }
             for(auto [socket,] : peers){
-                if(download_pieces(socket, piece_buffer, piece_size, piece_index,true) != -1){
+                if(download_piece(socket, piece_buffer, piece_size, piece_index,true) != -1){
                     ofstream file = ofstream(out_file, ios::binary);
                     if(file) {
                         file.write((const char *)piece_buffer, piece_size);
