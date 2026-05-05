@@ -400,7 +400,7 @@ json get_magnet_metadata(PeerInfo &peer) {
     char response[1024];
     read(peer.sock_fd, &len, 4);
     len = ntohl(len);
-    read(peer.sock_fd, response, 2)
+    read(peer.sock_fd, response, 2);
     len -= 2;
     string bufstr("", len);
     size_t bytes_read = read(peer.sock_fd, bufstr.data(), len);
