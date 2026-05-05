@@ -363,6 +363,32 @@ int download_piece(int sock_fd, uint8_t *piece_buffer, size_t piece_size, int pi
     return piece_index;
 }
 
+pair<string,string> magnet_ip_and_hash(string &magnet_link) {
+    auto pos = magnet_link.find("xt=urn:btih:") + strlen("xt=urn:btih:");
+    string info_hash = magnet_link.substr(pos, 40);
+    pos = magnet_link.find("tr=") + strlen("tr=");
+    string tracker_url = url_decode(magnet_link.substr(pos, magnet_link.length() - pos));
+    cout << "Info Hash: "<< info_hash<<'\n';
+    cout << "Tracker URL: " << tracker_url << '\n';
+    string bytes_info_hash = hex_to_bytes(info_hash);
+    string peers = get_peers(tracker_url, bytes_info_hash);
+    return {peers, bytes_info_hash};
+}
+
+PeerInfo magnet_handshake(string &magnet_link) {
+    auto [peers, bytes_info_hash] = magnet_ip_and_hash(magnet_link);
+    return handshake(peers, bytes_info_hash, true);
+}
+
+PeerInfo magnet_handshake(int argc, char* argv[]){
+    if(argc < 3){
+        cerr << "Usage: " << argv[0] << " magnet_handshake <magnet-link>" << endl;
+        return {};
+    }
+    string magnet_link = argv[2];
+    return magnet_handshake(magnet_link);
+}
+
 int main(int argc, char* argv[]) {
     // Flush after every std::cout / std::cerr
     std::cout << std::unitbuf;
@@ -516,6 +542,8 @@ int main(int argc, char* argv[]) {
         string url = magnet_link.substr(pos, magnet_link.length() - pos);
         cout << "Info Hash: "<< info_hash<<'\n';
         cout << "Tracker URL: " << url_decode(url) << '\n';
+    }else if (command  == "magnet_handshake") {
+        magnet_handshake(argc, argv);
     }else {
         std::cerr << "unknown command: " << command << std::endl;
         return 1;
