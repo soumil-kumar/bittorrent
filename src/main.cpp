@@ -444,11 +444,51 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
-    }
-    else {
+    } else if (command == "download") {
+        if(argc < 5) {
+            cerr << "Usage: " << argv[0] << "download -o out_file sample.torrent" << endl;
+            return 1;
+        }
+        string out_file = argv[3];
+        string file_name = argv[4];
+        auto buffer = process_torrent_file(file_name);
+        int offset = 0;
+        json decoded_value = decode_bencoded_value(buffer, offset);
+        size_t standard_piece_size = decoded_value["info"]["piece length"];
+        size_t total_size = decoded_value["info"]["length"];
+        int piece_count = (total_size) / standard_piece_size;
+        size_t used_len = piece_count * standard_piece_size;
+        uint8_t *file_buffer = (uint8_t *)malloc(total_size);
+        cout<<"piece_count : " << piece_count << '\n';
+        unordered_set<int> pieces;
+        for(int i=0; i<=piece_count; i++) pieces.insert(i);
+        while(!pieces.empty()){
+            vector<int> sockets = get_peers_connections(buffer);
+            vector<future<int>> futures;
+            int tasks = min(sockets.size(), pieces.size());
+            auto it = pieces.begin();
+            for(int i=0; i<tasks; i++, it++){
+                int sock_fd = sockets[i];
+                int piece_index = *it;
+                size_t piece_size = (piece_index < piece_count) ? standard_piece_size : (total_size > used_len ? total_size - used_len : 0);
+                uint8_t *piece_buffer = file_buffer + (piece_index * standard_piece_size);
+                futures.push_back(async(launch::async, download_piece, sock_fd, piece_buffer, piece_size, piece_index, false));
+            }
+            for(auto &f : futures){
+                auto res = f.get();
+                if(res == -1) continue;
+                cout << "Download piece_index: " << res << '\n';
+                pieces.erase(res);
+            }
+        }
+        ofstream file = ofstream(out_file, ios::binary);
+        if(file) {
+            file.write((const char *)file_buffer, total_size);
+            file.close();
+        }
+    }else {
         std::cerr << "unknown command: " << command << std::endl;
         return 1;
     }
-
     return 0;
 }
