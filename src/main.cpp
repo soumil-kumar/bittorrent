@@ -656,7 +656,7 @@ int main(int argc, char* argv[]) {
                 int piece_index = *it;
                 size_t piece_size = (piece_index < piece_count) ? standard_piece_size : (total_size > used_len ? total_size - used_len : 0);
                 uint8_t *piece_buffer = file_buffer + (piece_index * standard_piece_size);
-                futures.push_back(async(launch::async, donwload_piece, sock_fd, piece_buffer, piece_size, piece_index, true));
+                futures.push_back(async(launch::async, download_piece, sock_fd, piece_buffer, piece_size, piece_index, true));
             } 
             for(auto &f : futures) {
                 auto res = f.get();
