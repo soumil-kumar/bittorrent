@@ -407,7 +407,7 @@ json get_magnet_metadata(PeerInfo &peer) {
     int offset = 0, offset2=0;
     auto decoded_value = decode_bencoded_value(bufstr, offset);
     auto decoded_value2 = decode_bencoded_value(bufstr.substr(offset), offset2);
-    return decoded_value;
+    return decoded_value2;
 }
 
 int main(int argc, char* argv[]) {
