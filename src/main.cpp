@@ -577,6 +577,38 @@ int main(int argc, char* argv[]) {
         for(int i=0; i<pieces_hash.length(); i+=40){
             cout << pieces_hash.substr(i, 40) << '\n';
         }
+    }else if (command = "magent_download_piece") {
+        if(argc < 6) {
+            cerr << "Usage: " << argv[0] << " magnet_download_piece -o out_file <magnet-link> <piece_index>" << endl;
+            return 1;
+        }
+        string out_file = argv[3];
+        string magnet_link = argv[4];
+        int piece_index = atoi(argv[5]);
+        uint8_t *piece_buffer = 0;
+        size_t piece_size = 0;
+        while(true) {
+            vector<PeerInfo> peers = magnet_get_peers(magnet_link);
+            if(piece_buffer == 0) {
+                auto metadata = get_magnet_metadata(peers[0]);
+                int total_size = metadata["length"];
+                int std_piece_len = metadata["piece length"];
+                size_t piece_count = total_size / std_piece_len;
+                size_t used_len = piece_count * std_piece_len;
+                piece_size = (piece_index < piece_count) ? std_piece_len : (total_size > used_len ? total_size - used_len : 0);
+                piece_buffer = (uint8_t *)malloc(piece_size);
+            }
+            for(auto [socket, _, _] : peers){
+                if(download_pieces(socket, piece_buffer, piece_size, piece_index,true) != -1){
+                    ofstream file = ofstream(out_file, ios::binary);
+                    if(file) {
+                        file.write((const char *)piece_buffer, piece_size);
+                        file.close();
+                        return 0;
+                    }
+                }
+            }
+        }
     }else {
         std::cerr << "unknown command: " << command << std::endl;
         return 1;
