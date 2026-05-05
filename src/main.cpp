@@ -598,7 +598,7 @@ int main(int argc, char* argv[]) {
                 piece_size = (piece_index < piece_count) ? std_piece_len : (total_size > used_len ? total_size - used_len : 0);
                 piece_buffer = (uint8_t *)malloc(piece_size);
             }
-            for(auto [socket, _, _] : peers){
+            for(auto [socket,] : peers){
                 if(download_pieces(socket, piece_buffer, piece_size, piece_index,true) != -1){
                     ofstream file = ofstream(out_file, ios::binary);
                     if(file) {
