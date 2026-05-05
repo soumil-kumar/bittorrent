@@ -121,6 +121,24 @@ string url_encode_binary(string &binary_data) {
     return encoded.str();
 }
 
+string url_decode(const string &encoded){
+    string decoded;
+    decoded.reserve(encoded.size());
+    for(char *chr = (char *)encoded.data(); *chr; chr++){
+        if((*chr) == '%'){
+            stringstream hex_stream;
+            hex_stream << *(chr+1);
+            hex_stream << *(chr+2);
+            int hex_value;
+            if (hex_stream >> hex >> hex_value) {
+                decoded += (char)hex_value;
+                chr += 2;
+            }else decoded += (*chr);
+        }else decoded += (*chr);
+    }
+    return decoded;
+}
+
 string get_info_hash_bytes(string &buffer) {
     int info_idx = buffer.find("4:info") + strlen("4:info");
     auto info_coded = buffer.substr(info_idx, buffer.size() - info_idx - 1);
@@ -486,6 +504,18 @@ int main(int argc, char* argv[]) {
             file.write((const char *)file_buffer, total_size);
             file.close();
         }
+    }else if (command == "magnet_parse") {
+        if(argc < 3) {
+            cerr << "Usage: " << argv[0] << " magnet_parse <magnet-ling>" << endl;
+            return 1;
+        }
+        string magnet_link = argv[2];
+        auto pos = magnet_link.find("xt=urn:btih:") + strlen("xt=urn:btih:");
+        string info_hash = magnet_link.substr(pos, 40);
+        pos = magnet_link.find("tr=") + strlen("tr=");
+        string url = magnet_link.substr(pos, magnet_link.length() - pos);
+        cout << "Info Hash: "<< info_hash<<'\n';
+        cout << "Tracker URL: " << url_decode(url) << '\n';
     }else {
         std::cerr << "unknown command: " << command << std::endl;
         return 1;
