@@ -389,6 +389,27 @@ PeerInfo magnet_handshake(int argc, char* argv[]){
     return magnet_handshake(magnet_link);
 }
 
+json get_magnet_metadata(PeerInfo &peer) {
+    string payload = "d8:msg_typei0e5:piecei0ee";
+    uint32_t len = payload.length() + 2;
+    len = htonl(len);
+    write(peer.sock_fd, &len, 4);
+    write(peer.sock_fd, (char[]){20}, 1);
+    write(peer.sock_fd, &peer.ut_metadata, 1);
+    write(peer.sock_fd, payload.c_str(), payload.length());
+    char response[1024];
+    read(peer.sock_fd, &len, 4);
+    len = ntohl(len);
+    read(peer.sock_fd, response, 2)
+    len -= 2;
+    string bufstr("", len);
+    size_t bytes_read = read(peer.sock_fd, bufstr.data(), len);
+    int offset = 0, offset2=0;
+    auto decoded_value = decode_bencoded_value(bufstr, &offset);
+    auto decoded_value2 = decode_bencoded_value(bufstr.substr(offset), offset2);
+    return decoded_value;
+}
+
 int main(int argc, char* argv[]) {
     // Flush after every std::cout / std::cerr
     std::cout << std::unitbuf;
@@ -544,6 +565,18 @@ int main(int argc, char* argv[]) {
         cout << "Tracker URL: " << url_decode(url) << '\n';
     }else if (command  == "magnet_handshake") {
         magnet_handshake(argc, argv);
+    }else if (command == "magnet_info") {
+        PeerInfo peer = magnet_handshake(argc, argv);
+        auto metadata = get_magnet_metadata(peer);
+        int length = metadata["length"];
+        int piece_length = metadata["piece length"];
+        cout << "Length: " << length << '\n';
+        cout << "Piece Length: " << piece_length << '\n';
+        string pieces_hash_bytes = metadata["pieces"].get<string>();
+        string pieces_hash = bytes_to_hex((uint8_t *)pieces_hash_bytes.c_str(), pieces_hash_bytes.length());
+        for(int i=0; i<pieces_hash.length(); i+=40){
+            cout << pieces_hash.substr(i, 40) << '\n';
+        }
     }else {
         std::cerr << "unknown command: " << command << std::endl;
         return 1;
